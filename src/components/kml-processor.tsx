@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import { Upload, File, Check, AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -10,17 +12,18 @@ const LV_POLE_NAMES = ['LV_Pole', 'LV_pole', 'lv_pole', 'lv pole', 'LV pole', 'L
 const ADDITIONAL_POLE_NAMES = ['Additional_pole', 'ADDITIONAL POLE', 'ADDITIONAL POLES', 'Additional Pole', 'Additional_Pole', 'additional_pole', 'additional pole', 'Additional pole', 'Additional Poles', 'Additional_Poles', 'additional_poles', 'additional poles', 'Additional poles'];
 
 const KMLProcessor = () => {
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState({ status: '', message: '' });
-  const [missingFolders, setMissingFolders] = useState([]);
+  const [missingFolders, setMissingFolders] = useState<string[]>([]);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [processedKMLContent, setProcessedKMLContent] = useState<string | null>(null);
 
-  const processKML = async (kmlText) => {
+  const processKML = async (kmlText: string): Promise<string> => {
     try {
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(kmlText, "text/xml");
-      
+
       // Find folders
       const folders = xmlDoc.getElementsByTagName('Folder');
       const foundFolders = {
@@ -28,12 +31,12 @@ const KMLProcessor = () => {
         lv: false,
         additional: false
       };
-      
+
       let nextIndex = 1;
-      
-      Array.from(folders).forEach(folder => {
-        const folderName = folder.getElementsByTagName('name')[0]?.textContent?.trim();
-        
+
+      Array.from(folders).forEach((folder: Element) => {
+        const folderName = folder.getElementsByTagName('name')[0]?.textContent?.trim() || "";
+
         if (MV_POLE_NAMES.includes(folderName)) {
           foundFolders.mv = true;
           nextIndex = renamePlacemarks(folder, nextIndex);
@@ -45,27 +48,26 @@ const KMLProcessor = () => {
           nextIndex = renamePlacemarks(folder, nextIndex);
         }
       });
-      
+
       // Check missing folders
-      const missing = [];
+      const missing: string[] = [];
       if (!foundFolders.mv) missing.push("MV_Pole");
       if (!foundFolders.lv) missing.push("LV_Pole");
       if (!foundFolders.additional) missing.push("Additional Poles");
-      
+
       setMissingFolders(missing);
-      
       if (missing.length > 0) {
         setShowConfirm(true);
-        return null;
       }
-      
+
       return new XMLSerializer().serializeToString(xmlDoc);
     } catch (error) {
-      throw new Error('Error processing KML file: ' + error.message);
+      const message = error instanceof Error ? error.message : 'Unknown error occurred';
+      throw new Error(`Error processing KML file: ${message}`);
     }
   };
 
-  const renamePlacemarks = (folder, startIndex) => {
+  const renamePlacemarks = (folder: Element, startIndex: number): number => {
     const placemarks = folder.getElementsByTagName('Placemark');
     Array.from(placemarks).forEach((placemark, i) => {
       const nameElement = placemark.getElementsByTagName('name')[0];
@@ -76,19 +78,20 @@ const KMLProcessor = () => {
     return startIndex + placemarks.length;
   };
 
-  const handleFileChange = (event) => {
-    const selectedFile = event.target.files[0];
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
     if (selectedFile && selectedFile.name.endsWith('.kml')) {
       setFile(selectedFile);
       setResult({ status: '', message: '' });
       setShowConfirm(false);
       setMissingFolders([]);
+      setProcessedKMLContent(null);
     } else {
       setResult({ status: 'error', message: 'Please select a valid KML file' });
     }
   };
 
-  const handleProcess = async (ignoreMissing = false) => {
+  const handleProcess = async () => {
     if (!file) {
       setResult({ status: 'error', message: 'Please select a file first' });
       return;
@@ -98,25 +101,37 @@ const KMLProcessor = () => {
     try {
       const text = await file.text();
       const processedKML = await processKML(text);
-      
-      if (processedKML || ignoreMissing) {
-        const blob = new Blob([processedKML || text], { type: 'application/vnd.google-earth.kml+xml' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name.replace('.kml', '_RENAMED.kml');
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
+      setProcessedKMLContent(processedKML);
+
+      if (missingFolders.length === 0) {
+        downloadProcessedKML(processedKML);
         setResult({ status: 'success', message: 'KML file processed successfully!' });
-        setShowConfirm(false);
       }
     } catch (error) {
-      setResult({ status: 'error', message: error.message });
+      const message = error instanceof Error ? error.message : 'Unknown error occurred';
+      setResult({ status: 'error', message });
     }
     setProcessing(false);
+  };
+
+  const handleConfirmProcess = () => {
+    if (processedKMLContent) {
+      downloadProcessedKML(processedKMLContent);
+      setResult({ status: 'success', message: 'KML file processed successfully!' });
+      setShowConfirm(false);
+    }
+  };
+
+  const downloadProcessedKML = (content: string) => {
+    const blob = new Blob([content], { type: 'application/vnd.google-earth.kml+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file?.name.replace('.kml', '_RENAMED.kml') || 'processed.kml';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -151,13 +166,13 @@ const KMLProcessor = () => {
               </div>
 
               {showConfirm && (
-                <Alert variant="warning" className="mt-4">
+                <Alert variant="destructive" className="mt-4">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
                     <div className="space-y-2">
                       <p>The following folders are missing: {missingFolders.join(', ')}</p>
                       <div className="flex space-x-4">
-                        <Button onClick={() => handleProcess(true)} variant="outline">
+                        <Button onClick={handleConfirmProcess} variant="outline">
                           Process Anyway
                         </Button>
                         <Button onClick={() => setShowConfirm(false)} variant="ghost">
@@ -182,8 +197,8 @@ const KMLProcessor = () => {
 
               <div className="flex justify-center">
                 <Button
-                  onClick={() => handleProcess()}
-                  disabled={!file || processing || showConfirm}
+                  onClick={handleProcess}
+                  disabled={!file || processing}
                   className="w-full max-w-xs"
                 >
                   {processing ? 'Processing...' : 'Process KML File'}
