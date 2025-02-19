@@ -84,7 +84,7 @@ const KMLProcessor = () => {
     
     const rawContent = await file.text();
     const cleanedContent = cleanKMLContent(rawContent);
-    return { content: cleanedContent, zip: undefined };
+    return { content: cleanedContent};
   };
 
   const validateAndSetFile = async (selectedFile: File) => {
