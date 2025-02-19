@@ -23,29 +23,52 @@ const KMLProcessor = () => {
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [prefix, setPrefix] = useState('P');
 
+    // Add this function to clean the KML content
+  const cleanKMLContent = (kmlText: string): string => {
+    // Remove encoding declaration using regex
+    let cleanedKML = kmlText.replace(/<\?xml.*?\?>/, '');
+    
+    // Remove py:pytype attributes
+    cleanedKML = cleanedKML.replace(/ py:pytype="str"/g, '');
+    
+    // Additional namespace cleaning if needed
+    cleanedKML = cleanedKML.replace(/ xmlns:py=".*?"/g, '');
+    
+    return cleanedKML;
+  };
+
   const processKML = async (kmlText: string): Promise<string> => {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(kmlText, "text/xml");
     const folders = xmlDoc.getElementsByTagName('Folder');
     let nextIndex = 1;
-
+  
     Array.from(folders).forEach((folder: Element) => {
-      const folderName = folder.getElementsByTagName('name')[0]?.textContent?.trim() || "";
+      const nameElements = folder.getElementsByTagName('name');
+      const folderName = nameElements.length > 0 ? 
+        nameElements[0].textContent?.trim() || "" : "";
+        
       if (selectedFolders.includes(folderName)) {
         nextIndex = renamePlacemarks(folder, nextIndex, prefix);
       }
     });
-
+  
     return new XMLSerializer().serializeToString(xmlDoc);
   };
 
   const renamePlacemarks = (folder: Element, startIndex: number, prefix: string): number => {
     const placemarks = folder.getElementsByTagName('Placemark');
-    Array.from(placemarks).forEach((placemark, i) => {
-      const nameElement = placemark.getElementsByTagName('name')[0];
-      if (nameElement) nameElement.textContent = `${prefix}${startIndex + i}`;
+    let currentIndex = startIndex;
+    
+    Array.from(placemarks).forEach((placemark) => {
+      const nameElements = placemark.getElementsByTagName('name');
+      if (nameElements.length > 0) {
+        nameElements[0].textContent = `${prefix}${currentIndex}`;
+        currentIndex++;
+      }
     });
-    return startIndex + placemarks.length;
+    
+    return currentIndex;
   };
 
   const handleFileProcessing = async (file: File) => {
@@ -54,21 +77,30 @@ const KMLProcessor = () => {
       const loadedZip = await zip.loadAsync(file);
       const kmlFile = loadedZip.file(/\.kml$/i)[0];
       if (!kmlFile) throw new Error('No KML file found in KMZ archive');
-      return { content: await kmlFile.async('text'), zip: loadedZip };
+      const rawContent = await kmlFile.async('text');
+      const cleanedContent = cleanKMLContent(rawContent);
+      return { content: cleanedContent, zip: loadedZip };
     }
-    return { content: await file.text(), zip: undefined };
+    
+    const rawContent = await file.text();
+    const cleanedContent = cleanKMLContent(rawContent);
+    return { content: cleanedContent, zip: undefined };
   };
 
   const validateAndSetFile = async (selectedFile: File) => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { content, zip } = await handleFileProcessing(selectedFile);
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(content, "text/xml");
+      
+      // Find all folders and extract names robustly
       const folders = Array.from(xmlDoc.getElementsByTagName('Folder'));
-      const folderNames = folders.map(folder => 
-        folder.getElementsByTagName('name')[0]?.textContent?.trim() || 'Unnamed Folder'
-      );
+      const folderNames = folders.map(folder => {
+        const nameElements = folder.getElementsByTagName('name');
+        return nameElements.length > 0 ? 
+          nameElements[0].textContent?.trim() || 'Unnamed Folder' : 
+          'Unnamed Folder';
+      });
       
       setFile(selectedFile);
       setAvailableFolders(folderNames);
@@ -76,7 +108,10 @@ const KMLProcessor = () => {
       setResult({ status: '', message: '' });
       setProcessedContent(null);
     } catch (error) {
-      setResult({ status: 'error', message: error instanceof Error ? error.message : 'Invalid file format' });
+      setResult({ 
+        status: 'error', 
+        message: error instanceof Error ? error.message : 'Invalid file format' 
+      });
     }
   };
 
@@ -109,10 +144,12 @@ const KMLProcessor = () => {
 
   const downloadFile = async () => {
     if (!processedContent || !file) return;
-
+  
     if (file.name.endsWith('.kmz') && processedContent.zip) {
       const newZip = processedContent.zip;
-      newZip.file('doc.kml', processedContent.kml);
+      // For KMZ files, make sure to maintain the original document structure
+      const originalKmlFileName = newZip.file(/\.kml$/i)[0]?.name || 'doc.kml';
+      newZip.file(originalKmlFileName, processedContent.kml);
       const content = await newZip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(content);
       const a = document.createElement('a');

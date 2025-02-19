@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "KMZ/KML Placemark Renamer",
-  description: "KMZ/KML Placemark Renamer by Mesh",
+  description: "KMZ/KML Placemark Renamer",
 };
 
 export default function RootLayout({
