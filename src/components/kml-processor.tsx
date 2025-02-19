@@ -84,12 +84,12 @@ const KMLProcessor = () => {
     
     const rawContent = await file.text();
     const cleanedContent = cleanKMLContent(rawContent);
-    return { content: cleanedContent};
+    return { content: cleanedContent, zip: undefined };
   };
 
   const validateAndSetFile = async (selectedFile: File) => {
     try {
-      const { content, zip } = await handleFileProcessing(selectedFile);
+      const { content } = await handleFileProcessing(selectedFile);
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(content, "text/xml");
       
